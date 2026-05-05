@@ -6,6 +6,11 @@ loader = PyPDFLoader("/Users/yuguo/Downloads/House-owner-wordings.pdf")
 pages = loader.load()
 
 
-print(pages[0].page_content)
-print(pages[0].metadata)
+splitter = RecursiveCharacterTextSplitter(
+    chunk_size=1000,
+    chunk_overlap=200,
+)
 
+chunks = splitter.split_text(pages[0].page_content)
+
+print(chunks)
