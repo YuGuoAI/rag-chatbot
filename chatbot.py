@@ -100,4 +100,5 @@ for i, batch in enumerate(batch_iterator(records, batch_size=100), start=1):
     index.upsert(vectors=batch, namespace='Insurance')
     print(f"✅ Batch {i} done — {min(i * 100, len(records))}/{len(records)} vectors")
 
+# question test
 
