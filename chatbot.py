@@ -1,15 +1,12 @@
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-import tiktoken
 from openai import OpenAI
 from dotenv import load_dotenv
 import os
 from langchain_openai import OpenAIEmbeddings
 from pinecone import Pinecone, ServerlessSpec
-import langchain_pinecone
 
-
-
+# load the env
 load_dotenv()
 
 # Api keys setup
@@ -32,12 +29,6 @@ print(f"Pages loaded: {len(pages)}")
 print(f"Chunks created: {len(chunks)}")
 
 # langchain openai embedding
-'''response = client.embeddings.create(
-    input=chunks[0].page_content,
-    model="text-embedding-3-small"
-)
-print(f"Number of chunks: {len(chunks)}")'''
-
 embedding = OpenAIEmbeddings(
     model='text-embedding-3-small',
 )
@@ -46,7 +37,7 @@ chunks_metadata = [chunk.metadata for chunk in chunks]
 all_vectors = embedding.embed_documents(texts=chunks_text)
 
 # pinecone index created
-index_name = "rag-chatbot"
+index_name = os.getenv("INDEX_NAME")
 
 if index_name not in [i.name for i in pc.list_indexes()]:
     pc.create_index(
@@ -101,4 +92,82 @@ for i, batch in enumerate(batch_iterator(records, batch_size=100), start=1):
     print(f"✅ Batch {i} done — {min(i * 100, len(records))}/{len(records)} vectors")
 
 # question test
+question = "What is the deductible amount?"
 
+search_vector = embedding.embed_query(
+    text=question,
+)
+
+search_result = index.query(
+    namespace="Insurance",
+    vector=search_vector, 
+    top_k=3,
+    include_metadata=True,
+    include_values=False
+)
+
+print(f"\nQuestion: {question}\n")
+print(f"Found {len(search_result['matches'])} matches:\n")
+
+for i, match in enumerate(search_result['matches'], start=1):
+    print(f"--- Match {i} (similarity score: {match['score']:.3f}) ---")
+    print(f"Source: {match['metadata'].get('source', 'unknown')}")
+    print(f"Page: {match['metadata'].get('page', 'unknown')}")
+    print(f"Text preview: {match['metadata']['text'][:200]}...")
+    print()
+
+# extract the text from each match
+context_chunks = [match['metadata']['text'] for match in search_result['matches']]
+context = "\n\n---\n\n".join(context_chunks)
+# Build numbered context for citations
+
+SCORE_THRESHOLD = 0.4
+relevant_matches = [
+    m for m in search_result['matches'] 
+    if m['score'] >= SCORE_THRESHOLD
+]
+
+numbered_context = "\n\n".join([
+    f"[{i+1}] (Source: {m['metadata'].get('source', 'unknown').split('/')[-1]}, "
+    f"Page: {m['metadata'].get('page', 'unknown')})\n"
+    f"{m['metadata']['text']}"
+    for i, m in enumerate(relevant_matches)
+])
+
+prompt = f"""You are an assistant that answers questions based ONLY on provided context.
+
+STRICT RULES:
+1. Use ONLY information explicitly stated in the numbered context chunks below.
+2. For every claim, cite the chunk number in brackets like [1] or [2].
+3. If you cannot find the answer in the context, respond exactly: "I cannot answer this question based on the provided documents."
+4. Do NOT use prior knowledge or make assumptions beyond what the context says.
+5. If sources conflict, point out the conflict instead of choosing one.
+
+Context:
+{numbered_context}
+
+Question: {question}
+
+Answer (with citations):"""
+
+
+
+if not relevant_matches:
+    print(f"\n💬 Question: {question}")
+    print(f"\n📝 Answer: I don't have relevant information in my knowledge base to answer this question confidently.")
+else:
+    response = client.responses.create(
+        model= "gpt-5",
+        input= prompt,
+    )
+
+answer = response.output_text
+
+# Display the answer with citations
+print(f"\n💬 Question: {question}")
+print(f"\n📝 Answer: {answer}")
+print(f"\n📚 Sources used:")
+for match in search_result['matches']:
+    source = match['metadata'].get('source', 'unknown').split('/')[-1]
+    page = match['metadata'].get('page', 'unknown')
+    print(f"   • {source}, page {page} (score: {match['score']:.3f})")
