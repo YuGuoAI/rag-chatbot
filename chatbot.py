@@ -13,7 +13,7 @@ load_dotenv()
 client = OpenAI(api_key=os.getenv(key='OPENAI_API_KEY'))
 pc = Pinecone(api_key=os.getenv(key='PINECONE_API_KEY'))
 
-# load the documents
+# load the documents(pdfs)
 loader = PyPDFLoader("/Users/yuguo/Downloads/House-owner-wordings.pdf")
 pages = loader.load()
 
@@ -24,11 +24,11 @@ splitter = RecursiveCharacterTextSplitter(
 )
 chunks = splitter.split_documents(pages)
 
-# verify
+# verify the loaded chunks
 print(f"Pages loaded: {len(pages)}")
 print(f"Chunks created: {len(chunks)}")
 
-# langchain openai embedding
+# langchain openai embedding set up
 embedding = OpenAIEmbeddings(
     model='text-embedding-3-small',
 )
